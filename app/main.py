@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from PIL import Image, ImageDraw, ImageFont
@@ -7,14 +7,17 @@ from typing import List, Optional
 import io
 import requests
 from io import BytesIO
+import os
 
 app = FastAPI()
 
 # Bearer-Token-Validierung
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# Ihr geheimes Token (kann auch aus einer Umgebungsvariable geladen werden)
-API_TOKEN = "your-secret-token"
+# Umgebungsvariablen laden
+API_TOKEN = os.getenv("API_KEY")
+GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
+GCP_SA_CREDENTIALS = os.getenv("GCP_SA_CREDENTIALS")
 
 def verify_token(token: str = Depends(oauth2_scheme)):
     if token != API_TOKEN:
