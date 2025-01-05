@@ -23,6 +23,7 @@ API_TOKEN = os.getenv("API_KEY")
 GCP_BUCKET_NAME = os.getenv("GCP_BUCKET_NAME")
 GCP_SA_CREDENTIALS = os.getenv("GCP_SA_CREDENTIALS")
 
+
 def verify_token(token: str = Depends(oauth2_scheme)):
     if token != API_TOKEN:
         raise HTTPException(
@@ -31,13 +32,15 @@ def verify_token(token: str = Depends(oauth2_scheme)):
         )
     return token
 
+
 class TextLayer(BaseModel):
     text: str
     font: str = "arial.ttf"  # Standard-Font
-    font_size: Optional[int] = 50  # Standard-Schriftgröße
+    font_size: Optional[int] = None  # Optional, falls dynamisch berechnet
     color: str = "black"
     position: dict = {"x": 0, "y": 0}
     box_size: dict = {"width": 100, "height": 50}
+
 
 class ImageLayer(BaseModel):
     image_url: Optional[str] = None  # URL des Overlay-Bildes
@@ -45,13 +48,15 @@ class ImageLayer(BaseModel):
     position: dict = {"x": 0, "y": 0}
     size: dict = {"width": 100, "height": 100}
 
+
 class ImageRequest(BaseModel):
     background_url: Optional[str] = None  # URL des Hintergrundbildes
     background: Optional[UploadFile] = None  # Oder direkt hochgeladenes Bild
     text_layers: List[TextLayer] = []
     image_layers: List[ImageLayer] = []
-    output_width: Optional[int] = None  # Breite des Ausgabebilds
-    output_height: Optional[int] = None  # Höhe des Ausgabebilds
+    output_width: Optional[int] = None
+    output_height: Optional[int] = None
+
 
 def calculate_font_size(draw, text, font_path, box_width, box_height):
     font_size = 1
@@ -63,6 +68,17 @@ def calculate_font_size(draw, text, font_path, box_width, box_height):
         font_size += 1
         font = ImageFont.truetype(font_path, font_size)
     return font_size - 1  # Letzte Größe, die passt
+
+
+def log_text_layer(layer):
+    logging.debug(f"Text Layer: Text={layer.text}, Font={layer.font}, FontSize={layer.font_size}, "
+                  f"Color={layer.color}, Position=({layer.position['x']}, {layer.position['y']}), "
+                  f"BoxSize=({layer.box_size['width']}, {layer.box_size['height']})")
+
+
+def log_image_size(action, image):
+    logging.debug(f"{action}: Image Size = {image.size}")
+
 
 @app.post("/process-image/")
 async def process_image(
@@ -84,10 +100,11 @@ async def process_image(
         else:
             raise HTTPException(status_code=400, detail="No background image provided")
 
-        logging.debug(f"Original background size: {background_image.size}")
+        log_image_size("Original", background_image)
 
         # Textschichten hinzufügen
         for layer in text_layers:
+            log_text_layer(layer)  # Logge die Textschicht
             draw = ImageDraw.Draw(background_image)
             font_path = f"app/fonts/{layer.font}"
             
@@ -111,10 +128,11 @@ async def process_image(
             overlay_image = overlay_image.resize((layer.size["width"], layer.size["height"]))
             background_image.paste(overlay_image, (layer.position["x"], layer.position["y"]), overlay_image)
 
-        # Ausgabegröße anpassen
+        # Bildgröße ändern, falls Parameter vorhanden
         if output_width and output_height:
-            background_image = background_image.resize((output_width, output_height), Image.ANTIALIAS)
-            logging.debug(f"Resized output size: {background_image.size}")
+            log_image_size("Before Resize", background_image)
+            background_image = background_image.resize((output_width, output_height))
+            log_image_size("After Resize", background_image)
 
         # Bild in Bytes umwandeln
         img_byte_arr = io.BytesIO()
@@ -125,5 +143,5 @@ async def process_image(
         return StreamingResponse(img_byte_arr, media_type="image/png")
 
     except Exception as e:
-        logging.error(f"Error processing image: {e}")
+        logging.error(f"Error processing image: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
